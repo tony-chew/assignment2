@@ -218,7 +218,23 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # compute mean and variance
+        mu = x.mean(axis = 0)
+        var = x.var(axis = 0)
+
+        # compute standard deviation
+        std = np.sqrt(var + eps)
+
+        # compute normalised input (out)
+        xhat = (x - mu) / std
+        out = gamma * xhat + beta
+
+        # update running mean and variance
+        running_mean = momentum * running_mean + (1 - momentum) * mu
+        running_var = momentum * running_var + (1 - momentum) * (std * std)
+
+        # store values of importance into cache
+        cache = [x, mu, std, gamma, xhat]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -233,7 +249,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        running_xhat = (x - running_mean) / np.sqrt(running_var + eps)
+        out = gamma * running_xhat + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -275,7 +292,51 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # extract variables from cache
+    x, mu, std, gamma, xhat = cache[0], cache[1], cache[2], cache[3], cache[4]
+
+    # extract dimensions of input/output
+    N, D = dout.shape
+
+    ### FROM OUTPUT
+    # step 1. out --> intermediate addition --> beta
+    dbeta = np.sum(dout, axis = 0)
+
+    # step 2. out --> intermediate addition --> intermediate multiplication --> gamma
+    dgamma = np.sum(xhat * dout, axis = 0)
+
+    # step 3. out --> intermediate addition --> intermediate multiplication --> xhat
+    dxhat = dout * gamma
+
+    ### FROM xhat
+    # step 4.1 xhat --> intermediate multiplication --> (x - mu)
+    invstd = 1.0 / std
+    dx_mu = dxhat * invstd
+
+    # step 4.2 xhat --> intermediate multiplication --> inverse std
+    dinvstd = np.sum(dxhat * (x - mu), axis = 0)
+
+    # step 5. inverse std --> inverse --> std
+    dstd = (-1. / (std**2)) * dinvstd
+
+    # step 6. std --> sqrt --> variance
+    dvar = 0.5 * (1. / std) * dstd
+
+    # step 7. variance --> intermediate addition --> mean
+    da = 1. / N * np.ones((N, D)) * dvar
+
+    # step 8. mean --> intermediate square --> (x - mu) 2.
+    dx_mu_2 = 2 * (x - mu) * da
+
+    # step 9.1 (x - mu) --> intermediate subtraction --> x
+    dx1 = dx_mu + dx_mu_2
+
+    # step 9.2 (x - mu) --> intermediate subtraction --> mean
+    dmu = -1. * np.sum(dx_mu + dx_mu_2, axis = 0)
+
+    # step 10. mean --> x
+    dx2 = 1. / N * np.ones((N, D)) * dmu
+    dx = dx1 + dx2 
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -310,7 +371,25 @@ def batchnorm_backward_alt(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # extract variables from cache
+    x, mu, std, gamma, xhat = cache[0], cache[1], cache[2], cache[3], cache[4]
+
+    # extract dimensions of input/output
+    N, D = dout.shape
+
+    # compute db, dgamma
+    dbeta = np.sum(dout, axis = 0)
+    dgamma = np.sum(xhat * dout, axis = 0)
+
+    # compute dx: refer to https://kevinzakka.github.io/2016/09/14/batch_normalization/
+    # for finalised simplified derivation
+
+    # firstly compute needed terms
+    dxhat = dout * gamma
+
+    # dx
+    dx = ((1. / N) * (N * dxhat - np.sum(dxhat, axis = 0) - xhat * np.sum(dxhat * xhat, axis = 0))) / std
+    
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
