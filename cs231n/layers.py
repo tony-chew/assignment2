@@ -188,6 +188,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     mode = bn_param["mode"]
     eps = bn_param.get("eps", 1e-5)
     momentum = bn_param.get("momentum", 0.9)
+    layernorm = bn_param.get('layer_norm', 0) # layernorm is 0 if otherwise not defined (for summation axis type)
 
     N, D = x.shape
     running_mean = bn_param.get("running_mean", np.zeros(D, dtype=x.dtype))
@@ -229,12 +230,13 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         xhat = (x - mu) / std
         out = gamma * xhat + beta
 
-        # update running mean and variance
-        running_mean = momentum * running_mean + (1 - momentum) * mu
-        running_var = momentum * running_var + (1 - momentum) * (std * std)
+        # update running mean and variance (only if batchnorm exists)
+        if layernorm == 0:    
+            running_mean = momentum * running_mean + (1 - momentum) * mu
+            running_var = momentum * running_var + (1 - momentum) * (std * std)
 
         # store values of importance into cache
-        cache = [x, mu, std, gamma, xhat]
+        cache = [x, mu, std, gamma, xhat, layernorm]
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -372,14 +374,14 @@ def batchnorm_backward_alt(dout, cache):
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
     # extract variables from cache
-    x, mu, std, gamma, xhat = cache[0], cache[1], cache[2], cache[3], cache[4]
+    x, mu, std, gamma, xhat, axis = cache[0], cache[1], cache[2], cache[3], cache[4], cache[5]
 
     # extract dimensions of input/output
     N, D = dout.shape
 
     # compute db, dgamma
-    dbeta = np.sum(dout, axis = 0)
-    dgamma = np.sum(xhat * dout, axis = 0)
+    dbeta = np.sum(dout, axis)
+    dgamma = np.sum(xhat * dout, axis)
 
     # compute dx: refer to https://kevinzakka.github.io/2016/09/14/batch_normalization/
     # for finalised simplified derivation
@@ -435,7 +437,20 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # define values from ln_param, this initiates the train mode section of batchnorm_forward
+    ln_param['mode'] = 'train'
+    ln_param['layer_norm'] = 1 # set axis to 1 in bactchnorm computes
+
+    # transpose the input values for batchnorm_forward function
+    x = x.T
+    gamma = gamma.reshape(-1, 1)
+    beta = beta.reshape(-1, 1)
+
+    # compute layernorm with transposed values, this normalises over the features (C) instead of images (N)
+    out, cache = batchnorm_forward(x, gamma, beta, ln_param)
+
+    # transpose output to get original dimensions back
+    out = out.T
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -470,7 +485,14 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # transpose the input values
+    dout = dout.T
+
+    # compute backward pass
+    dx, dgamma, dbeta = batchnorm_backward_alt(dout, cache)
+
+    # transpose output to get original dimensions back
+    dx = dx.T
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -519,7 +541,11 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        # compute mask matrix (form True/False prob matrix based on p, then scaled)
+        # NOTE: p is probability to keep a neuron active 
+        mask = (np.random.rand(*x.shape) < p) / p
+
+        out = x * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -531,7 +557,7 @@ def dropout_forward(x, dropout_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        out = x
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -562,7 +588,7 @@ def dropout_backward(dout, cache):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        dx = dout * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
