@@ -634,7 +634,46 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise variable dimensions
+    N, C, H, W = x.shape # N images, C channels (RGB), H x W image dims
+    F, C, HH, WW = w.shape # F filters, C channels (RGB), HH x WW filter dims
+
+    # extract padding and stride values from dictionary
+    p = conv_param['pad']
+    s = conv_param['stride']
+
+    # padding of input data (pad index 2 and 3 (H and W))
+    x_pad = np.pad(x, ((0, 0), (0, 0), (p, p), (p, p)), 'constant')
+    H_pad, W_pad = x_pad.shape[2], x_pad.shape[3]
+
+    # initialise output dimensions 
+    H_out = int(((H - HH + 2 * p) / s) + 1)
+    W_out = int(((W - WW + 2 * p) / s) + 1)
+    #out = np.zeros((N, F, H_out, W_out))
+
+    index = []
+
+    # forward pass
+    for n in range(N):
+        # for each image --> extract relevant input image index 
+        x_pad_index = x_pad[n]
+
+        for f in range(F):
+            # for each filter number --> extract relevant weights and bias filter index
+            w_index = w[f]
+            b_index = b[f]
+
+            for i in range(0, H_pad - HH + 1, s):
+                # for each height range according to stride
+
+                for j in range(0, W_pad - WW + 1, s):
+                    # for each width range according to stride
+                    # compute dot product, append to index 
+                    test = np.sum((x_pad_index[:, i:i+HH, j:j+WW] * w_index)) + b_index
+                    index.append(test)
+
+    # reshape index to output dimensions 
+    out = np.array(index).reshape(N, F, H_out, W_out) 
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -663,7 +702,86 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # REFRENCES: https://www.linkedin.com/pulse/forward-back-propagation-over-cnn-code-from-scratch-coy-ulloa/
+    # REFRENCES: https://medium.com/@pavisj/convolutions-and-backpropagations-46026a8f5d2c
+
+    # initialise variable dimensions and cache
+    x, w, b, conv_param = cache
+    
+    N, F, H_out, W_out = dout.shape
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+
+    # extract padding and stride values from dictionary cache
+    p = conv_param['pad']
+    s = conv_param['stride']
+
+    # initialise output dimensions
+    dx = np.zeros(x.shape)  # N, C, H, W
+    dw = np.zeros(w.shape)  # F, C, HH, WW
+
+    # padding of x and dx
+    x_pad = np.pad(x, ((0, 0), (0, 0), (p, p), (p, p)), 'constant')
+    dx_pad = np.pad(dx, ((0, 0), (0, 0), (p, p), (p, p)), 'constant')
+    H_pad, W_pad = x_pad.shape[2], x_pad.shape[3]
+
+    ### COMPUTE dw
+    
+    # initialise empty list
+    index = []
+
+    for f in range(F):
+        # for each filter --> extract relevant dout filter index
+        dout_index = dout[:, f]
+
+        for c in range(C):
+            # for each channel --> extract relevant x_pad channel index
+            x_pad_index = x_pad[:, c]
+
+            for i in range(0, H_pad - H_out + 1, s):
+                # for each height range according to stride
+
+                for j in range(0, W_pad - W_out + 1, s):
+                    # for each width range according to stride
+                    # compute dot product, append to index 
+                    test = np.sum((x_pad_index[:, i:i+H_out, j:j+W_out] * dout_index))
+                    index.append(test)
+
+    # reshape index to output dimensions of dw
+    dw = np.array(index).reshape(F, C, HH, WW)
+
+    ### COMPUTE dx
+    
+    for n in range(N): 
+        
+        for f in range(F):
+            # for each filter and image --> extract relevant weight and dout index
+            w_index = w[f]
+            dout_index = dout[n, f]
+
+            # initialise height count
+            H_index = 0
+        
+            for i in range(0, H_pad - HH + 1, s):
+                # for each height range according to stride
+
+                # initialise width count
+                W_index = 0
+            
+                for j in range(0, W_pad - WW + 1, s):
+                    # for each width range according to stride
+                    # compute gradient (np.sum not used here, hence add onto dx_pad)
+                    dx_pad[n, :, i:(i+HH), j:(j+WW)] += w_index * dout_index[H_index, W_index]
+                
+                    W_index += 1
+                H_index += 1
+
+    # get correct dimensions of dx
+    dx = dx_pad[:, :, p:(H+p), p:(W+p)]
+
+    ### COMPUTE db
+    # summation of daxis to get into F filters
+    db = np.sum(dout, axis = (0, 2, 3))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
