@@ -649,8 +649,6 @@ def conv_forward_naive(x, w, b, conv_param):
     # initialise output dimensions 
     H_out = int(((H - HH + 2 * p) / s) + 1)
     W_out = int(((W - WW + 2 * p) / s) + 1)
-    #out = np.zeros((N, F, H_out, W_out))
-
     index = []
 
     # forward pass
@@ -716,9 +714,9 @@ def conv_backward_naive(dout, cache):
     p = conv_param['pad']
     s = conv_param['stride']
 
-    # initialise output dimensions
+    # initialise dx output dimensions
     dx = np.zeros(x.shape)  # N, C, H, W
-    dw = np.zeros(w.shape)  # F, C, HH, WW
+    dw = np.zeros(w.shape)
 
     # padding of x and dx
     x_pad = np.pad(x, ((0, 0), (0, 0), (p, p), (p, p)), 'constant')
@@ -726,29 +724,27 @@ def conv_backward_naive(dout, cache):
     H_pad, W_pad = x_pad.shape[2], x_pad.shape[3]
 
     ### COMPUTE dw
-    
-    # initialise empty list
-    index = []
-
     for f in range(F):
-        # for each filter --> extract relevant dout filter index
-        dout_index = dout[:, f]
+        # for each filter 
 
-        for c in range(C):
-            # for each channel --> extract relevant x_pad channel index
-            x_pad_index = x_pad[:, c]
+        # initalise height index
+        H_index = 0
+        
+        for i in range(0, H_pad - HH + 1, s):
+            # for each height range according to stride
 
-            for i in range(0, H_pad - H_out + 1, s):
-                # for each height range according to stride
+            # initialise width count
+            W_index = 0
+            
+            for j in range(0, W_pad - WW + 1, s):
+                # for each width range according to stride
+                # compute gradient
+                dw[f] += np.sum(x_pad[:, :, i:(i+HH), j:(j+WW)] * dout[:, f, H_index, W_index].reshape(N, 1, 1, 1), axis=0)
 
-                for j in range(0, W_pad - W_out + 1, s):
-                    # for each width range according to stride
-                    # compute dot product, append to index 
-                    test = np.sum((x_pad_index[:, i:i+H_out, j:j+W_out] * dout_index))
-                    index.append(test)
+                # iterate over height and width indexes for next for loop compute
+                W_index += 1
 
-    # reshape index to output dimensions of dw
-    dw = np.array(index).reshape(F, C, HH, WW)
+            H_index += 1
 
     ### COMPUTE dx
     
@@ -773,7 +769,9 @@ def conv_backward_naive(dout, cache):
                     # compute gradient (np.sum not used here, hence add onto dx_pad)
                     dx_pad[n, :, i:(i+HH), j:(j+WW)] += w_index * dout_index[H_index, W_index]
                 
+                    # iterate over height and width indexes for next for loop compute
                     W_index += 1
+                    
                 H_index += 1
 
     # get correct dimensions of dx
@@ -815,7 +813,39 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise variable dimensions
+    N, C, H, W = x.shape
+
+    # extract relevant variables from dictionary
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    s = pool_param['stride']
+
+    # initialise out dimensions
+    H_pool = int(((H - pool_height) / s) + 1)
+    W_pool = int(((W - pool_width) / s) + 1)
+    out = np.zeros((N, C, H_pool, W_pool))
+
+    # forward pass
+    # iterate through each height and width, summ through image wise and filter wise 
+
+    # initialise height count
+    H_index = 0
+    
+    for i in range(0, H - pool_height + 1, s):
+        # for each height range according to stride
+
+        # initialise width count
+        W_index = 0
+        
+        for j in range(0, W - pool_width + 1, s):
+            # for each width range according to stride
+            # extract the max values of that particular pooling array 
+            out[:, :, H_index, W_index] = np.max(x[:, :, i:(i+pool_height), j:(j+pool_width)], axis = (2, 3))
+            
+            W_index += 1
+            
+        H_index += 1
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -842,7 +872,53 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise variable dimensions and cache
+    x, pool_param = cache
+    N, C, H, W = x.shape
+    _,_, H_out, W_out = dout.shape
+    
+
+    # extract relevant variables from dictionary
+    pool_height = pool_param['pool_height']
+    pool_width = pool_param['pool_width']
+    s = pool_param['stride']
+
+    # initialise dx output dimensions
+    dx = np.zeros(x.shape)  # N, C, H, W
+
+    # backward pass
+
+    for n in range(N):
+        
+        for c in range(C):
+            # for each image and channel --> extract relevant image and dout index
+            x_index = x[n, c]
+            dout_index = dout[n, c]
+            dx _index = dx[n, c]
+
+            # initialise height count
+            H_index = 0
+            
+            for i in range(0, H - pool_height + 1, s):
+                # for each height range according to stride
+
+                # initialise width index
+                W_index = 0
+                
+                for j in range(0, W - pool_width + 1, s):
+                    # for each width range according to stride
+
+                    # gather relevant x input sizing
+                    x_current = x_index[i:(i+pool_height), j:(j+pool_width)]
+                    
+                    max_ind = np.unravel_index(np.argmax(x_current, axis=None), x_current.shape)
+                    dx_index[i+max_ind[0], j+max_ind[1]] = dout_index[H_index, W_index]
+
+                    W_index += 1
+
+                H_index += 1
+    #print(dx[0])
+    #print('space')
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
