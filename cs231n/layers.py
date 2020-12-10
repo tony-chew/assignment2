@@ -727,7 +727,7 @@ def conv_backward_naive(dout, cache):
     for f in range(F):
         # for each filter 
 
-        # initalise height index
+        # initalise height count
         H_index = 0
         
         for i in range(0, H_pad - HH + 1, s):
@@ -739,7 +739,7 @@ def conv_backward_naive(dout, cache):
             for j in range(0, W_pad - WW + 1, s):
                 # for each width range according to stride
                 # compute gradient
-                dw[f] += np.sum(x_pad[:, :, i:(i+HH), j:(j+WW)] * dout[:, f, H_index, W_index].reshape(N, 1, 1, 1), axis=0)
+                dw[f] += np.sum(x_pad[:, :, i:i+HH, j:j+WW] * dout[:, f, H_index, W_index].reshape(N, 1, 1, 1), axis=0)
 
                 # iterate over height and width indexes for next for loop compute
                 W_index += 1
@@ -748,7 +748,9 @@ def conv_backward_naive(dout, cache):
 
     ### COMPUTE dx
     
-    for n in range(N): 
+    for n in range(N):
+        # for each image --> extract relevant image index
+        dx_pad_index = dx_pad[n]
         
         for f in range(F):
             # for each filter and image --> extract relevant weight and dout index
@@ -766,8 +768,8 @@ def conv_backward_naive(dout, cache):
             
                 for j in range(0, W_pad - WW + 1, s):
                     # for each width range according to stride
-                    # compute gradient (np.sum not used here, hence add onto dx_pad)
-                    dx_pad[n, :, i:(i+HH), j:(j+WW)] += w_index * dout_index[H_index, W_index]
+                    # compute gradient 
+                    dx_pad_index[:, i:(i+HH), j:j+WW] += w_index * dout_index[H_index, W_index]
                 
                     # iterate over height and width indexes for next for loop compute
                     W_index += 1
@@ -841,8 +843,9 @@ def max_pool_forward_naive(x, pool_param):
         for j in range(0, W - pool_width + 1, s):
             # for each width range according to stride
             # extract the max values of that particular pooling array 
-            out[:, :, H_index, W_index] = np.max(x[:, :, i:(i+pool_height), j:(j+pool_width)], axis = (2, 3))
+            out[:, :, H_index, W_index] = np.max(x[:, :, i:i+pool_height, j:j+pool_width], axis = (2, 3))
             
+            # iterate over height and width indexes for next for loop compute
             W_index += 1
             
         H_index += 1
@@ -877,7 +880,6 @@ def max_pool_backward_naive(dout, cache):
     N, C, H, W = x.shape
     _,_, H_out, W_out = dout.shape
     
-
     # extract relevant variables from dictionary
     pool_height = pool_param['pool_height']
     pool_width = pool_param['pool_width']
@@ -891,10 +893,10 @@ def max_pool_backward_naive(dout, cache):
     for n in range(N):
         
         for c in range(C):
-            # for each image and channel --> extract relevant image and dout index
+            # for each image and channel --> extract relevant image, dx and dout index
             x_index = x[n, c]
             dout_index = dout[n, c]
-            dx _index = dx[n, c]
+            dx_index = dx[n, c]
 
             # initialise height count
             H_index = 0
@@ -908,17 +910,20 @@ def max_pool_backward_naive(dout, cache):
                 for j in range(0, W - pool_width + 1, s):
                     # for each width range according to stride
 
-                    # gather relevant x input sizing
-                    x_current = x_index[i:(i+pool_height), j:(j+pool_width)]
+                    # gather relevant x input sizing to pass back through
+                    x_pass = x_index[i:(i+pool_height), j:(j+pool_width)]
                     
-                    max_ind = np.unravel_index(np.argmax(x_current, axis=None), x_current.shape)
+                    # use unravel_index with argmax to gather the indices of the max argument of that pooling size
+                    max_ind = np.unravel_index(np.argmax(x_pass), x_pass.shape)
+
+                    # put the relevant dout index value into dx according to max_ind
                     dx_index[i+max_ind[0], j+max_ind[1]] = dout_index[H_index, W_index]
 
+                    # iterate over height and width indexes for next for loop compute
                     W_index += 1
 
                 H_index += 1
-    #print(dx[0])
-    #print('space')
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -960,7 +965,24 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise input dimension variables
+    N, C, H, W = x.shape
+
+    # IDEA: compute spatial batch statistics for each C feature over dimensions N, H and W
+    # transpose x such that it becomes (N, H, W, C)
+    x = np.transpose(x, (0, 2, 3, 1))
+
+    # reshape such that it fits dimensions for batchnorm function input
+    x = x.reshape(N * H * W, C)
+    
+    # conduct batch normalisation
+    out, cache = batchnorm_forward(x, gamma, beta, bn_param)
+
+    # reshape out into (N, H, W, C)
+    out = out.reshape(N, H, W, C)
+
+    # transpose out such that (N, C, H, W)
+    out = np.transpose(out, (0, 3, 1, 2))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -994,7 +1016,23 @@ def spatial_batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise input dimension variables
+    N, C, H, W = dout.shape
+
+    # transpose dout such that it becomes (N, H, W, C)
+    dout = np.transpose(dout, (0, 2, 3, 1))
+
+    # reshape such that it fits dimensions for batchnorm_backward
+    dout = dout.reshape(N * H * W, C)
+
+    # conduct backward pass
+    dx, dgamma, dbeta = batchnorm_backward_alt(dout, cache)
+
+    # reshape dx into (N, H, W, C)
+    dx = dx.reshape(N, H, W, C)
+
+    # transpose dx such that (N, H, W, C)
+    dx = np.transpose(dx, (0, 3, 1, 2))
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -1034,7 +1072,30 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    # initialise input dimension variables
+    N, C, H, W = x.shape
+
+    # initialise sizing due to parameter G
+    size = (N * G, int(C / G * H * W))
+
+    # resize input such that it becomes size.T shape
+    x = np.transpose(x.reshape(size))
+
+    # compute mean and variance
+    mu = x.mean(axis = 0)
+    var = x.var(axis = 0)
+
+    # compute standard deviation
+    std = np.sqrt(var + eps)
+
+    # compute normalised input (out), then conduct transpose and reshaping back into N, C, H, W
+    xhat = (x - mu) / std
+    xhat = np.transpose(xhat).reshape(N, C, H, W)
+
+    out = gamma * xhat + beta
+
+    # store values of importance into cache
+    cache = [gamma, std, mu, xhat, size]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
