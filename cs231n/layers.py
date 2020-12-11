@@ -1095,7 +1095,7 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     out = gamma * xhat + beta
 
     # store values of importance into cache
-    cache = [gamma, std, mu, xhat, size]
+    cache = [x, mu, std, gamma, xhat, size]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -1125,7 +1125,34 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    ### CODE COPY PASTED AND THEN SLIGHTLY ALTERED FROM BATCH NORMALISATION BACKWARD ALT 
+
+    # extract variables from cache
+    x, mu, std, gamma, xhat, size = cache[0], cache[1], cache[2], cache[3], cache[4], cache[5]
+
+    # extract dimensions of input
+    N, C, H, W = dout.shape
+
+    # compute db, dgamma (summation to get into C channels)
+    dbeta = np.sum(dout, axis = (0, 2, 3)).reshape(1, C, 1, 1)
+    dgamma = np.sum(xhat * dout, axis = (0, 2, 3)).reshape(1, C, 1, 1)
+
+    # reshape variables (into shape of size, then transpose <-- whole point of spatial norm)
+    xhat = xhat.reshape(size).T
+    N_spatial = xhat.shape[0]
+
+    # compute dx: refer to https://kevinzakka.github.io/2016/09/14/batch_normalization/
+    # for finalised simplified derivation
+
+    # firstly compute needed terms (reshape into size, then transpose)
+    dxhat = dout * gamma
+    dxhat = dxhat.reshape(size).T
+
+    # dx (see: batchnorm backward alt)
+    dx = ((1. / N_spatial) * (N_spatial * dxhat - np.sum(dxhat, axis = 0) - xhat * np.sum(dxhat * xhat, axis = 0))) / std
+
+    # reshape dx (transpose then to (N, C, H, W))
+    dx = dx.T.reshape(N, C, H, W)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
